@@ -76,6 +76,13 @@ def test_extract_title_response_parses_json_wrappers(content):
     )
 
 
+def test_extract_title_response_parses_top_level_json_string():
+    assert streaming._extract_title_response(_response('"Fix login button on mobile"')) == (
+        "Fix login button on mobile",
+        "",
+    )
+
+
 def test_sanitizer_rejects_quoted_alternatives_and_bulleted_options():
     assert streaming._sanitize_generated_title('"Fix title generation" or "Audit title generation"') == ""
     assert streaming._sanitize_generated_title('- "Fix title generation"\n- "Audit title generation"') == ""

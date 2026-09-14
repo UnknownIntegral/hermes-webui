@@ -4542,6 +4542,8 @@ def _extract_title_text(content: str) -> str:
         parsed = json.loads(raw)
         if isinstance(parsed, dict) and isinstance(parsed.get('title'), str):
             return parsed['title'].strip()
+        if isinstance(parsed, str):
+            return parsed.strip()
         return ''
     except (TypeError, ValueError):
         pass

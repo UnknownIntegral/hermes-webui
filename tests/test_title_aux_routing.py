@@ -132,7 +132,7 @@ class TestGenerateTitleRawViaAuxTimeout(unittest.TestCase):
         mock_resp = types.SimpleNamespace(
             choices=[
                 types.SimpleNamespace(
-                    message=types.SimpleNamespace(content='Test Title'),
+                    message=types.SimpleNamespace(content='{"title": "Test Title"}'),
                     finish_reason='stop',
                 )
             ]
@@ -172,7 +172,7 @@ class TestGenerateTitleRawViaAuxTimeout(unittest.TestCase):
         mock_resp = types.SimpleNamespace(
             choices=[
                 types.SimpleNamespace(
-                    message=types.SimpleNamespace(content='Gemini Title'),
+                    message=types.SimpleNamespace(content='{"title": "Gemini Title"}'),
                     finish_reason='stop',
                 )
             ]
@@ -213,7 +213,7 @@ class TestGenerateTitleRawViaAuxTimeout(unittest.TestCase):
         mock_resp = types.SimpleNamespace(
             choices=[
                 types.SimpleNamespace(
-                    message=types.SimpleNamespace(content='Configured Model Title'),
+                    message=types.SimpleNamespace(content='{"title": "Configured Model Title"}'),
                     finish_reason='stop',
                 )
             ]
@@ -257,7 +257,7 @@ class TestGenerateTitleRawViaAuxTimeout(unittest.TestCase):
         mock_resp = types.SimpleNamespace(
             choices=[
                 types.SimpleNamespace(
-                    message=types.SimpleNamespace(content='Configured Key Title'),
+                    message=types.SimpleNamespace(content='{"title": "Configured Key Title"}'),
                     finish_reason='stop',
                 )
             ]
@@ -296,7 +296,7 @@ class TestGenerateTitleRawViaAuxTimeout(unittest.TestCase):
         mock_resp = types.SimpleNamespace(
             choices=[
                 types.SimpleNamespace(
-                    message=types.SimpleNamespace(content='Alte Session Bilder'),
+                    message=types.SimpleNamespace(content='{"title": "Alte Session Bilder"}'),
                     finish_reason='stop',
                 )
             ]
@@ -419,7 +419,7 @@ class TestGenerateTitleRawViaAuxTimeout(unittest.TestCase):
         mock_resp = types.SimpleNamespace(
             choices=[
                 types.SimpleNamespace(
-                    message=types.SimpleNamespace(content='Agent Route Title'),
+                    message=types.SimpleNamespace(content='{"title": "Agent Route Title"}'),
                     finish_reason='stop',
                 )
             ]
@@ -524,7 +524,7 @@ class TestReasoningModelTitleGeneration(unittest.TestCase):
 
         responses = [
             {'choices': [{'message': {'content': ''}, 'finish_reason': 'length'}]},
-            {'choices': [{'message': {'content': 'Useful Session Title'}, 'finish_reason': 'stop'}]},
+            {'choices': [{'message': {'content': '{"title": "Useful Session Title"}'}, 'finish_reason': 'stop'}]},
         ]
         captured_budgets = []
 
@@ -619,7 +619,7 @@ class TestReasoningModelTitleGeneration(unittest.TestCase):
 
         responses = [
             {'choices': [{'message': {'content': ''}, 'finish_reason': 'length'}]},
-            {'choices': [{'message': {'content': 'Agent Session Title'}, 'finish_reason': 'stop'}]},
+            {'choices': [{'message': {'content': '{"title": "Agent Session Title"}'}, 'finish_reason': 'stop'}]},
         ]
         captured_budgets = []
 
@@ -1095,7 +1095,7 @@ class TestAuxTitleConversationContext(unittest.TestCase):
     MOCK_RESP = types.SimpleNamespace(
         choices=[
             types.SimpleNamespace(
-                message=types.SimpleNamespace(content='Weather Title'),
+                message=types.SimpleNamespace(content='{"title": "Weather Title"}'),
                 finish_reason='stop',
             )
         ]

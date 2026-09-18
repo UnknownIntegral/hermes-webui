@@ -360,3 +360,277 @@ def test_agent_empty_schema_response_tries_compatibility_shape(schema_response):
     assert calls[1]["max_tokens"] == calls[0]["max_tokens"]
     assert calls[1]["extra_body"] == {"reasoning_effort": "none"}
     assert agent.reasoning_config is None
+
+
+LEGITIMATE_PERSISTED_TITLES = (
+    "Topic Label Accessibility",
+    "Maybe Monad Error Handling",
+    "Understanding 3-8 Words in Regex",
+)
+
+ADVERSARIAL_TRACE_TITLES = (
+    "<think >secret</think> Safe Title",
+    "<analysis>We need to inspect this</analysis> Safe Title",
+    "<|channel|>analysis We need to inspect this",
+    "Analysis: We need to fix login button",
+)
+
+
+@pytest.mark.parametrize("candidate", LEGITIMATE_PERSISTED_TITLES)
+def test_persisted_title_check_accepts_ordinary_subject_matter(candidate):
+    assert streaming._looks_invalid_generated_title(candidate) is False
+    session = types.SimpleNamespace(
+        title=candidate,
+        llm_title_generated=True,
+        messages=[
+            {"role": "user", "content": "Explain the topic."},
+            {"role": "assistant", "content": "Here is the explanation."},
+        ],
+    )
+    assert streaming._background_title_generation_inputs(session) is None
+
+
+@pytest.mark.parametrize("candidate", ADVERSARIAL_TRACE_TITLES)
+def test_sanitizer_rejects_whitespace_and_provider_trace_wrappers(candidate):
+    assert streaming._looks_invalid_generated_title(candidate) is True
+    assert streaming._sanitize_generated_title(candidate) == ""
+
+
+def test_schema_extract_accepts_only_json_object_with_string_title():
+    assert streaming._extract_title_text(
+        '{"title": "Fix login button on mobile"}',
+        mode="schema",
+    ) == "Fix login button on mobile"
+    assert streaming._extract_title_text("Fix login button on mobile", mode="schema") == ""
+    assert streaming._extract_title_text('"Fix login button on mobile"', mode="schema") == ""
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        '{"foo": "bar',
+        '{"title": "None"}',
+        '{"title": "undefined"}',
+        '{"title": "null"}',
+    ),
+)
+def test_schema_extract_fails_closed_on_malformed_json_and_sentinels(content):
+    assert streaming._extract_title_text(content, mode="schema") == ""
+    assert streaming._extract_title_response(_response(content), mode="schema") == (
+        "",
+        "llm_empty",
+    )
+
+
+def test_compatibility_extract_still_accepts_prose_and_json_string():
+    assert streaming._extract_title_response(
+        _response("Fix login button on mobile"),
+        mode="compatibility",
+    ) == ("Fix login button on mobile", "")
+    assert streaming._extract_title_response(
+        _response('"Fix login button on mobile"'),
+        mode="compatibility",
+    ) == ("Fix login button on mobile", "")
+
+
+def test_legitimate_existing_title_is_not_self_healed_on_background_update(monkeypatch):
+    session = types.SimpleNamespace(
+        session_id="keep-maybe-monad-title",
+        title="Maybe Monad Error Handling",
+        llm_title_generated=True,
+        manual_title=False,
+        messages=[
+            {"role": "user", "content": "Explain maybe monads."},
+            {"role": "assistant", "content": "A maybe monad models optional values."},
+        ],
+        save=MagicMock(),
+    )
+    events = []
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("title generation must not rerun for a legitimate persisted title")
+
+    monkeypatch.setattr(streaming, "get_session", lambda _session_id: session)
+    monkeypatch.setattr(streaming, "SESSIONS", {session.session_id: session})
+    monkeypatch.setattr(streaming, "LOCK", threading.Lock())
+    monkeypatch.setattr(streaming, "_aux_title_generation_enabled", lambda: True)
+    monkeypatch.setattr(streaming, "_aux_title_configured", lambda: True)
+    monkeypatch.setattr(streaming, "generate_title_raw_via_aux", fail_if_called)
+    monkeypatch.setattr(
+        "api.profiles.profile_env_for_background_worker",
+        lambda *_args, **_kwargs: nullcontext(),
+    )
+
+    streaming._run_background_title_update(
+        session_id=session.session_id,
+        user_text="Explain maybe monads.",
+        assistant_text="A maybe monad models optional values.",
+        placeholder_title="Untitled",
+        put_event=lambda name, data: events.append((name, data)),
+        agent=None,
+    )
+
+    assert session.title == "Maybe Monad Error Handling"
+    assert session.save.call_count == 0
+    status = [data for name, data in events if name == "title_status"]
+    assert status[-1]["status"] == "skipped"
+    assert status[-1]["reason"] == "already_generated"
+
+
+def test_legitimate_existing_title_survives_normal_turn(tmp_path, monkeypatch):
+    import queue
+    import sys
+
+    import api.config as config
+    import api.models as models
+    from api.models import Session
+
+    session_dir = tmp_path / "sessions"
+    session_dir.mkdir()
+    monkeypatch.setattr(models, "SESSION_DIR", session_dir)
+    monkeypatch.setattr(models, "SESSION_INDEX_FILE", session_dir / "_index.json")
+    monkeypatch.setattr(streaming, "SESSION_DIR", session_dir)
+    models.SESSIONS.clear()
+    streaming.SESSIONS.clear()
+    streaming.STREAMS.clear()
+    streaming.AGENT_INSTANCES.clear()
+    streaming.SESSION_AGENT_LOCKS.clear()
+    config.STREAMS.clear()
+    config.CANCEL_FLAGS.clear()
+    config.AGENT_INSTANCES.clear()
+    config.SESSION_AGENT_LOCKS.clear()
+
+    sid = "keep-maybe-monad-send"
+    stream_id = "stream-keep-maybe-monad"
+    original_title = "Maybe Monad Error Handling"
+    session = Session(
+        session_id=sid,
+        title=original_title,
+        workspace=str(tmp_path),
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": "Explain maybe monads."},
+            {"role": "assistant", "content": "A maybe monad models optional values."},
+        ],
+        llm_title_generated=True,
+        manual_title=False,
+    )
+    session.active_stream_id = stream_id
+    session.pending_user_message = "Give another example."
+    session.pending_started_at = 1.0
+    session.save()
+    models.SESSIONS[sid] = session
+    streaming.SESSIONS[sid] = session
+    event_queue = queue.Queue()
+    streaming.STREAMS[stream_id] = event_queue
+
+    class FakeAgent:
+        def __init__(
+            self,
+            model=None,
+            provider=None,
+            base_url=None,
+            api_key=None,
+            platform=None,
+            quiet_mode=False,
+            enabled_toolsets=None,
+            fallback_model=None,
+            session_id=None,
+            session_db=None,
+            stream_delta_callback=None,
+            reasoning_callback=None,
+            tool_progress_callback=None,
+            interim_assistant_callback=None,
+            clarify_callback=None,
+            **kwargs,
+        ):
+            self.session_id = session_id
+            self.stream_delta_callback = stream_delta_callback
+            self.context_compressor = None
+            self.session_prompt_tokens = 10
+            self.session_completion_tokens = 4
+            self.session_estimated_cost_usd = None
+            self.session_cache_read_tokens = 0
+            self.session_cache_write_tokens = 0
+            self.reasoning_config = None
+            self.ephemeral_system_prompt = None
+            self._last_error = None
+
+        def run_conversation(self, **kwargs):
+            if self.stream_delta_callback:
+                self.stream_delta_callback("Option types are a maybe monad.")
+            return {
+                "completed": True,
+                "final_response": "Option types are a maybe monad.",
+                "messages": [
+                    {"role": "user", "content": "Explain maybe monads."},
+                    {"role": "assistant", "content": "A maybe monad models optional values."},
+                    {"role": "user", "content": kwargs.get("persist_user_message", "")},
+                    {"role": "assistant", "content": "Option types are a maybe monad."},
+                ],
+            }
+
+        def interrupt(self, _message):
+            return None
+
+    fake_hermes_state = types.ModuleType("hermes_state")
+    fake_hermes_state.SessionDB = lambda *_args, **_kwargs: object()
+
+    title_update_calls = []
+
+    def track_title_update(*args, **kwargs):
+        title_update_calls.append((args, kwargs))
+
+    monkeypatch.setattr(streaming, "get_session", lambda _sid: session)
+    monkeypatch.setattr(streaming, "_get_ai_agent", lambda: FakeAgent)
+    monkeypatch.setattr(
+        streaming,
+        "resolve_model_provider",
+        lambda *_args, **_kwargs: ("gpt-4o", "openai", None),
+    )
+    monkeypatch.setattr("api.config.get_config", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr("api.config._resolve_cli_toolsets", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(streaming, "_run_background_title_update", track_title_update)
+    monkeypatch.setitem(sys.modules, "hermes_state", fake_hermes_state)
+
+    streaming._run_agent_streaming(
+        session_id=sid,
+        msg_text="Give another example.",
+        model="gpt-4o",
+        workspace=str(tmp_path),
+        stream_id=stream_id,
+    )
+
+    assert session.title == original_title
+    assert session.llm_title_generated is True
+    assert streaming._background_title_generation_inputs(session) is None
+    assert title_update_calls == []
+
+
+def test_minimax_aux_schema_request_keeps_reasoning_split():
+    captured = {}
+
+    def fake_call_llm(**kwargs):
+        captured.update(kwargs)
+        return _response('{"title": "MiniMax Schema Title"}')
+
+    with auxiliary_client_modules():
+        with patch_tg_config(
+            {
+                "provider": "minimax",
+                "model": "minimax-m2",
+                "base_url": "https://api.minimaxi.com/v1",
+            }
+        ):
+            with patch("agent.auxiliary_client.call_llm", side_effect=fake_call_llm, create=True):
+                result, status = streaming.generate_title_raw_via_aux(
+                    "Why is login broken on mobile?",
+                    "The click handler is not attached.",
+                )
+
+    assert result == "MiniMax Schema Title"
+    assert status == "llm_aux"
+    extra = captured["extra_body"]
+    assert extra["response_format"] == EXPECTED_RESPONSE_FORMAT
+    assert extra["reasoning_split"] is True
+    assert "reasoning" not in extra

@@ -16,6 +16,10 @@ BAD_TITLE_OUTPUTS = (
     'Something like "Fix Session Title Generation" or "Audit Session Title Generation…',
     'Good title: "Budget 2-Stage Snow Blower Recommendations" or "Cheapest Well-Revie…',
     'Options: - "Durable Bathroom Flooring Options" - "Cost-Effective Bathroom Floor…',
+    "The title should be 3-8 words, matching the user's language (English), as a topi",
+    'Something like "HOA Docs Review and Filing" or "File HOA Documents in Sub...',
+    'Something like "House Value Projection to 2038" or "Home Appre...',
+    "The title should be concise",
 )
 
 EXPECTED_RESPONSE_FORMAT = {
@@ -368,6 +372,12 @@ LEGITIMATE_PERSISTED_TITLES = (
     "Understanding 3-8 Words in Regex",
 )
 
+SCREENSHOT_PERSISTED_TRACES = (
+    "The title should be 3-8 words, matching the user's language (English), as a topi",
+    'Something like "HOA Docs Review and Filing" or "File HOA Documents in Sub...',
+    "The title should be concise",
+)
+
 ADVERSARIAL_TRACE_TITLES = (
     "<think >secret</think> Safe Title",
     "<analysis>We need to inspect this</analysis> Safe Title",
@@ -388,6 +398,20 @@ def test_persisted_title_check_accepts_ordinary_subject_matter(candidate):
         ],
     )
     assert streaming._background_title_generation_inputs(session) is None
+
+
+@pytest.mark.parametrize("candidate", SCREENSHOT_PERSISTED_TRACES)
+def test_persisted_title_check_self_heals_screenshot_traces(candidate):
+    assert streaming._looks_invalid_generated_title(candidate) is True
+    session = types.SimpleNamespace(
+        title=candidate,
+        llm_title_generated=True,
+        messages=[
+            {"role": "user", "content": "File the HOA documents."},
+            {"role": "assistant", "content": "I will inspect the HOA packet."},
+        ],
+    )
+    assert streaming._background_title_generation_inputs(session) is not None
 
 
 @pytest.mark.parametrize("candidate", ADVERSARIAL_TRACE_TITLES)

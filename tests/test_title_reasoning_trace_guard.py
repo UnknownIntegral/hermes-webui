@@ -370,6 +370,8 @@ LEGITIMATE_PERSISTED_TITLES = (
     "Topic Label Accessibility",
     "Maybe Monad Error Handling",
     "Understanding 3-8 Words in Regex",
+    "The Good Title Debate",
+    "A Good Title for Your Novel",
 )
 
 SCREENSHOT_PERSISTED_TRACES = (

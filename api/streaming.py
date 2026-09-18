@@ -3953,7 +3953,7 @@ def _looks_invalid_generated_title(text: str) -> bool:
         )
         or re.search(r'<\|turn\|?>\s*thinking', s, flags=re.IGNORECASE)
         or re.search(
-            r'^\s*(?:[*_`~]+\s*)?(?:(?:the|a|an)\s+)?(?:title should|something like|good title|a good title|options\s*:)',
+            r'^\s*(?:[*_`~]+\s*)?(?:the\s+)?title should|^\s*(?:[*_`~]+\s*)?(?:something like|(?:a\s+)?good title\s*:|options\s*:)',
             s,
             flags=re.IGNORECASE,
         )
